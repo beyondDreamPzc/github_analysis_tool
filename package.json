@@ -1,0 +1,17 @@
+{
+  "name": "github-health-check",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub 仓库体检工具：输入公开仓库地址，输出 Star/Fork/语言分布/活跃度可视化报告与项目评分",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "keywords": ["github", "repository", "analytics", "visualization", "ai"],
+  "license": "MIT"
+}

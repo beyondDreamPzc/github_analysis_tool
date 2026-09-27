@@ -1,0 +1,13 @@
+# 依赖与运行时
+node_modules/
+.env
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 日志与临时产物
+*.log
+npm-debug.log*

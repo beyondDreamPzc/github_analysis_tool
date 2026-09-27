@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GitHub 仓库体检 · Repo Health Check</title>
+<meta name="description" content="输入任意公开 GitHub 仓库地址，一键生成 Star / Fork / 语言分布 / 活跃度可视化报告与 AI 项目评分。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A9%BA%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/styles.css?v=__ASSET_VERSION__" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">🩺</div>
+    <div>
+      <h1>GitHub 仓库体检</h1>
+      <p>Repo Health Check · 可视化指标 + AI 评分</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button id="settingsToggle" class="btn ghost" type="button">⚙️ 高级设置</button>
+    <button id="themeToggle" class="btn ghost" type="button" title="切换明暗主题">🌙</button>
+  </div>
+</header>
+
+<section class="settings" id="settingsPanel" hidden>
+  <div class="settings-grid">
+    <label>
+      <span>GitHub Token（可选）</span>
+      <input id="ghToken" type="password" placeholder="ghp_xxx —— 配额从 60 次/小时提升到 5000 次/小时" autocomplete="off" />
+    </label>
+    <label>
+      <span>AI 接口地址（可选）</span>
+      <input id="aiBase" type="text" placeholder="https://api.openai.com/v1（兼容任何 OpenAI 协议的服务）" autocomplete="off" />
+    </label>
+    <label>
+      <span>AI 模型名（可选）</span>
+      <input id="aiModel" type="text" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus" autocomplete="off" />
+    </label>
+    <label>
+      <span>AI API Key（可选）</span>
+      <input id="aiKey" type="password" placeholder="留空则使用内置规则引擎评分" autocomplete="off" />
+    </label>
+  </div>
+  <p class="settings-note">
+    以上信息仅保存在浏览器 localStorage 并随请求体发送给本地服务，不会写入磁盘或第三方。不填也能完整体验全部可视化功能，AI 点评会自动回退到内置规则引擎。
+  </p>
+</section>
+
+<main>
+  <!-- 运行环境出网状态（仅在无法直连 GitHub 时出现） -->
+  <div id="connBanner" class="conn-banner" hidden></div>
+
+  <section class="search-panel">
+    <form id="searchForm" class="search-form" autocomplete="off">
+      <span class="search-icon">🔍</span>
+      <input id="repoInput" type="text" placeholder="粘贴公开仓库地址，例如 https://github.com/facebook/react" aria-label="GitHub 仓库地址" />
+      <button class="btn primary" id="analyzeBtn" type="submit">开始体检</button>
+    </form>
+    <div class="examples" id="examples">
+      <span class="examples-label">试试：</span>
+      <button class="chip example" data-repo="facebook/react">facebook/react</button>
+      <button class="chip example" data-repo="microsoft/vscode">microsoft/vscode</button>
+      <button class="chip example" data-repo="torvalds/linux">torvalds/linux</button>
+      <button class="chip example" data-repo="vitejs/vite">vitejs/vite</button>
+      <button class="chip example" data-repo="Tencent/tdesign-vue-next">Tencent/tdesign-vue-next</button>
+    </div>
+    <div id="alert" class="alert" hidden></div>
+    <!-- 失败的富信息面板：说清楚原因 + 给出下一步 -->
+    <div id="errorPanel" class="error-panel" hidden></div>
+  </section>
+
+  <section id="loading" class="loading-panel" hidden>
+    <div class="spinner"></div>
+    <div class="loading-text">
+      <strong id="loadingTitle">正在采集仓库数据…</strong>
+      <span id="loadingStep">请求 GitHub API：基础信息 · 语言 · 贡献者 · 提交 · Release · Issue</span>
+    </div>
+    <div class="loading-steps">
+      <div class="step" data-step="1">基础信息</div>
+      <div class="step" data-step="2">语言分布</div>
+      <div class="step" data-step="3">活跃度</div>
+      <div class="step" data-step="4">社区与协作</div>
+      <div class="step" data-step="5">多维评分</div>
+    </div>
+  </section>
+
+  <div id="result" hidden>
+
+    <!-- 仓库信息 + 评分 -->
+    <section class="grid-2">
+      <article class="card repo-card">
+        <div class="repo-head">
+          <img id="repoAvatar" class="avatar" alt="owner avatar" />
+          <div class="repo-title">
+            <h2 id="repoName">—</h2>
+            <p id="repoDesc" class="muted">—</p>
+          </div>
+        </div>
+        <div id="repoBadges" class="badges"></div>
+        <div id="repoTopics" class="topics"></div>
+        <dl class="meta-list" id="repoMeta"></dl>
+        <div class="repo-links">
+          <a id="repoLink" class="btn small" target="_blank" rel="noopener">在 GitHub 打开 ↗</a>
+          <a id="repoHome" class="btn small ghost" target="_blank" rel="noopener" hidden>官网 ↗</a>
+          <button id="exportBtn" class="btn small ghost" type="button">导出 JSON 报告</button>
+        </div>
+      </article>
+
+      <article class="card score-card">
+        <div class="score-head">
+          <h3>综合健康分</h3>
+          <span id="scoreSourceTag" class="tag">规则引擎</span>
+        </div>
+        <div class="score-body">
+          <div class="gauge">
+            <svg viewBox="0 0 200 200" class="gauge-svg" aria-hidden="true">
+              <circle class="gauge-track" cx="100" cy="100" r="82" />
+              <circle id="gaugeValue" class="gauge-value" cx="100" cy="100" r="82" />
+            </svg>
+            <div class="gauge-center">
+              <span id="scoreValue">—</span>
+              <small>满分 100</small>
+            </div>
+          </div>
+          <div class="score-side">
+            <div class="grade-row">
+              <span id="scoreGrade" class="grade-badge">—</span>
+              <span id="scoreGradeLabel" class="muted">—</span>
+            </div>
+            <p id="scoreVerdict" class="verdict">—</p>
+            <div id="scoreTags" class="tags"></div>
+          </div>
+        </div>
+        <div class="radar-wrap">
+          <canvas id="radarChart" height="220"></canvas>
+        </div>
+      </article>
+    </section>
+
+    <!-- KPI -->
+    <section id="kpiGrid" class="kpi-grid"></section>
+
+    <!-- 语言 + 提交趋势 -->
+    <section class="grid-2">
+      <article class="card">
+        <header class="card-head">
+          <h3>编程语言分布</h3>
+          <span id="langTotal" class="muted small"></span>
+        </header>
+        <div class="lang-body">
+          <div class="donut-wrap"><canvas id="langChart" height="200"></canvas></div>
+          <ul id="langList" class="lang-list"></ul>
+        </div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <h3>近 52 周提交趋势</h3>
+          <span id="commitSummary" class="muted small"></span>
+        </header>
+        <div class="chart-wrap"><canvas id="weeklyChart" height="200"></canvas></div>
+      </article>
+    </section>
+
+    <!-- Issue + 贡献者 -->
+    <section class="grid-2">
+      <article class="card">
+        <header class="card-head">
+          <h3>Issue 健康度</h3>
+          <span id="issueSummary" class="muted small"></span>
+        </header>
+        <div class="issue-body">
+          <div class="donut-wrap small-donut"><canvas id="issueChart" height="170"></canvas></div>
+          <ul id="issueStats" class="stat-list"></ul>
+        </div>
+        <div id="releaseList" class="release-list"></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <h3>贡献者排行</h3>
+          <span id="contributorSummary" class="muted small"></span>
+        </header>
+        <div class="chart-wrap"><canvas id="contributorChart" height="200"></canvas></div>
+      </article>
+    </section>
+
+    <!-- AI 点评 -->
+    <section class="card ai-card">
+      <header class="card-head">
+        <h3>🤖 AI 项目点评</h3>
+        <div class="head-actions">
+          <span id="aiSource" class="tag">—</span>
+          <button id="aiBtn" class="btn small ghost" type="button">重新生成点评</button>
+        </div>
+      </header>
+      <p id="aiSummary" class="ai-summary">—</p>
+      <div class="ai-columns">
+        <div class="ai-col pros">
+          <h4>✅ 亮点</h4>
+          <ul id="aiPros"></ul>
+        </div>
+        <div class="ai-col cons">
+          <h4>⚠️ 风险</h4>
+          <ul id="aiCons"></ul>
+        </div>
+        <div class="ai-col tips">
+          <h4>💡 改进建议</h4>
+          <ul id="aiSuggestions"></ul>
+        </div>
+      </div>
+      <p id="aiNote" class="muted small"></p>
+    </section>
+
+    <!-- 评分明细 -->
+    <section class="card">
+      <header class="card-head">
+        <h3>评分明细（可解释）</h3>
+        <span class="muted small">点击维度展开每条子因子得分</span>
+      </header>
+      <div id="dimensionList" class="dimension-list"></div>
+    </section>
+
+    <!-- 风险信号 -->
+    <section class="card">
+      <header class="card-head"><h3>风险与亮点信号</h3></header>
+      <ul id="flagList" class="flag-list"></ul>
+    </section>
+
+    <p class="disclaimer">
+      数据来源：GitHub 公开 REST API（每次体检约消耗 8-10 次配额）· 评分模型为公开可解释的加权规则，仅供参考，不构成技术选型建议。
+    </p>
+  </div>
+</main>
+
+<footer class="footer">
+  <span>GitHub 仓库体检工具 · 零依赖 Node 服务 + 原生前端</span>
+  <span id="rateLimitInfo" class="muted small"></span>
+</footer>
+
+<script src="/vendor/chart.umd.js?v=__ASSET_VERSION__"></script>
+<script src="/app.js?v=__ASSET_VERSION__"></script>
+</body>
+</html>
