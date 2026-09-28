@@ -2,7 +2,7 @@
 
 输入任意**公开** GitHub 仓库地址，一键生成可视化体检报告与 0–100 健康评分。
 
-**零第三方依赖** —— 只需要 Node.js ≥ 18，不用 `npm install`。
+**零第三方依赖** —— 只需要 Python ≥ 3.8，不用 `pip install`。
 
 ---
 
@@ -56,17 +56,17 @@
 
 ```
 github-health-check/
-├── server.js                  # HTTP 服务：静态托管 + API 路由 + .env 解析 + 静态资源指纹
-├── package.json               # 无任何 dependencies，仅定义 start / dev 脚本
+├── server.py                  # HTTP 服务：静态托管 + API 路由 + .env 解析 + 静态资源指纹
 ├── .env.example               # 配置模板（复制成 .env 后生效）
 ├── .gitignore
 ├── lib/
-│   ├── github.js              # 数据采集：10 个接口并行聚合、缓存、错误归一化、维护状态扫描、中继回退
-│   ├── score.js               # 五维评分引擎、风险信号识别、规则点评、AI 点评
-│   ├── proxy.js               # 出网代理：CONNECT 隧道 + NO_PROXY + 熔断（Node fetch 不读代理变量，需自行接管）
-│   ├── relay.js               # 备用数据通道：镜像探测与自动切换（走中继不携带 Token）
-│   ├── diag.js                # 出网诊断：DNS 保留地址识别 / 逐域名连通性 / 中继可用性 / 代理生效状态
-│   └── env.js                 # 轻量 .env 解析（去引号 / 去尾随空格 / 剥离行尾注释）
+│   ├── __init__.py            # 包标记
+│   ├── github.py              # 数据采集：10 个接口并行聚合、缓存、错误归一化、维护状态扫描、中继回退
+│   ├── score.py               # 五维评分引擎、风险信号识别、规则点评、AI 点评
+│   ├── proxy.py               # 出网代理：代理优先级 / NO_PROXY / 熔断 / 失败回落直连
+│   ├── relay.py               # 备用数据通道：镜像探测与自动切换（走中继不携带 Token）
+│   ├── diag.py                # 出网诊断：DNS 保留地址识别 / 逐域名连通性 / 中继可用性 / 代理生效状态
+│   └── env.py                 # 轻量 .env 解析（去引号 / 去尾随空格 / 剥离行尾注释）
 └── public/
     ├── index.html             # 单页仪表盘
     ├── app.js                 # 渲染逻辑 + 5 个图表 + 失败面板与环境横幅
@@ -84,7 +84,7 @@ github-health-check/
 git clone <本仓库地址>
 cd github-health-check
 
-node server.js      # 或：npm start
+python server.py
 ```
 
 启动后终端会打印页面地址与当前出网状态。浏览器打开：
@@ -93,7 +93,7 @@ node server.js      # 或：npm start
 http://localhost:8787
 ```
 
-> 不需要 `npm install` —— 项目没有任何第三方依赖，Chart.js 已放在 `public/vendor/` 下。
+> 不需要 `pip install` —— 项目没有任何第三方依赖，Chart.js 已放在 `public/vendor/` 下。
 
 ### 2. 开始体检
 
@@ -153,7 +153,7 @@ curl http://localhost:8787/api/health          # 服务探针 + 出网可达性 
 ## 五、注意事项
 
 1. **建议配 `GITHUB_TOKEN`。** 未认证时限额仅 60 次/小时（约可体检 7 个仓库），且这 60 次按**出口 IP 共享**，家宽 / 公司出口常被他人用光，表现为突然全部 `HTTP 403`（注意：这是限流，不是断网 —— 报错文案会明确区分）。
-2. **Node 内置的 `fetch` 不读 `HTTPS_PROXY`**（`curl` / `git` 会读），所以会出现「命令行能通、本工具报错」。本工具已自行接管代理链路，用 `GITHUB_PROXY` 指定即可。
+2. **代理走标准环境变量**：`HTTPS_PROXY` / `ALL_PROXY` 等与 `curl` / `git` 的读法一致，本工具另支持用 `GITHUB_PROXY` 覆盖环境里已有的代理。注意 `git config --global http.proxy` 只影响 git 自身，改变不了本工具的出口。
 3. **代理不一定是好事。** 某些白名单代理只放行 `api.github.com` 的个别路径，会导致部分接口失败；工具按「连续失败 3 次」自动熔断 10 分钟并回落直连。
 4. **网络受限环境**下会自动探测公共镜像作为备用通道。但中继不携带 Token，也绕不过配额，只解决"被封锁"，不解决"被限流"。
 5. **采样上限**：贡献者、Issue、提交均按前 100 条采样（GitHub 分页限制），超大仓库的数值为采样估算，页面上已标注口径。
